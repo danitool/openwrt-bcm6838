@@ -1,0 +1,142 @@
+--- a/drivers/irqchip/irq-bcm6345-l1.c
++++ b/drivers/irqchip/irq-bcm6345-l1.c
+@@ -41,10 +41,22 @@
+  *   0x1000_0058: CPU1_W2_STATUS	IRQs 32-63
+  *   0x1000_005c: CPU1_W3_STATUS	IRQs 0-31
+  *
+  * IRQs are numbered in CPU native endian order
+  * (which is big-endian in these examples)
++ * 
++ *  BCM6838:
++ *   0x14e0_0040: CPU0_W0_ENABLE
++ *   0x14e0_0044: CPU0_W0_STATUS	IRQs 0-31
++ *   0x14e0_0048: CPU1_W0_ENABLE
++ *   0x14e0_004c: CPU1_W0_STATUS
++ *  Second interrupt block (Extended interrupts)		
++ *   0x14e0_0348: CPU0_W1_ENABLE
++ *   0x14e0_034c: CPU0_W1_STATUS	IRQs 32-63
++ *   0x14e0_0350: CPU1_W1_ENABLE
++ *   0x14e0_0354: CPU1_W1_STATUS
++ * 
+  */
+ 
+ #define pr_fmt(fmt)	KBUILD_MODNAME	": " fmt
+ 
+ #include <linux/bitops.h>
+@@ -70,10 +82,13 @@
+ #define IRQS_PER_WORD		32
+ #define REG_BYTES_PER_IRQ_WORD	(sizeof(u32) * 2)
+ 
+ struct bcm6345_l1_cpu;
+ 
++static int nr_intpol_bases = 0;
++static int base2_offset;
++
+ struct bcm6345_l1_chip {
+ 	raw_spinlock_t		lock;
+ 	unsigned int		n_words;
+ 	struct irq_domain	*domain;
+ 	struct cpumask		cpumask;
+@@ -85,25 +100,42 @@ struct bcm6345_l1_cpu {
+ 	void __iomem		*map_base;
+ 	unsigned int		parent_irq;
+ 	u32			enable_cache[];
+ };
+ 
++/*register enable offset*/
+ static inline unsigned int reg_enable(struct bcm6345_l1_chip *intc,
+ 					   unsigned int word)
+ {
++	unsigned int ret = 0;
+ #ifdef __BIG_ENDIAN
+-	return (1 * intc->n_words - word - 1) * sizeof(u32);
++	if (nr_intpol_bases == 4 && word == 1) {
++		ret = base2_offset;
++	}
++	else
++		//ret = (1 * intc->n_words - word - 1) * sizeof(u32);
++		ret = 0;
++	return ret;
++	
+ #else
+ 	return (0 * intc->n_words + word) * sizeof(u32);
+ #endif
+ }
+ 
++/*register status offset*/
+ static inline unsigned int reg_status(struct bcm6345_l1_chip *intc,
+ 				      unsigned int word)
+ {
++	unsigned int ret = 0;
+ #ifdef __BIG_ENDIAN
+-	return (2 * intc->n_words - word - 1) * sizeof(u32);
++	if (nr_intpol_bases == 4 && word == 1) {
++		ret = base2_offset + 4;
++	}
++	else
++		//ret = (2 * intc->n_words - word - 1) * sizeof(u32);
++		ret = 4;
++	return ret;
+ #else
+ 	return (1 * intc->n_words + word) * sizeof(u32);
+ #endif
+ }
+ 
+@@ -229,15 +261,23 @@ static int __init bcm6345_l1_init_one(st
+ {
+ 	struct resource res;
+ 	resource_size_t sz;
+ 	struct bcm6345_l1_cpu *cpu;
+ 	unsigned int i, n_words;
++	void __iomem *map_base2;
+ 
+ 	if (of_address_to_resource(dn, idx, &res))
+ 		return -EINVAL;
+ 	sz = resource_size(&res);
+-	n_words = sz / REG_BYTES_PER_IRQ_WORD;
++	if (nr_intpol_bases == 4) {
++		map_base2 = of_iomap(dn, idx + 2);
++		n_words = 16 / REG_BYTES_PER_IRQ_WORD;
++	}
++	else
++		n_words = sz / REG_BYTES_PER_IRQ_WORD;
++	
++	printk("index = %d, n_words = %d, res.start = 0x%x", idx, n_words, res.start); //1
+ 
+ 	if (!intc->n_words)
+ 		intc->n_words = n_words;
+ 	else if (intc->n_words != n_words)
+ 		return -EINVAL;
+@@ -247,10 +287,14 @@ static int __init bcm6345_l1_init_one(st
+ 	if (!cpu)
+ 		return -ENOMEM;
+ 
+ 	cpu->intc = intc;
+ 	cpu->map_base = ioremap(res.start, sz);
++	
++	base2_offset = map_base2 - cpu->map_base;
++	printk("ioremap-base %d = 0x%px  base2 offset = 0x%x \n", idx, cpu->map_base, base2_offset);
++
+ 	if (!cpu->map_base)
+ 		return -ENOMEM;
+ 
+ 	if (!request_mem_region(res.start, sz, res.name))
+ 		pr_err("failed to request intc memory");
+@@ -295,13 +339,16 @@ static const struct irq_domain_ops bcm63
+ 
+ static int __init bcm6345_l1_of_init(struct device_node *dn,
+ 			      struct device_node *parent)
+ {
+ 	struct bcm6345_l1_chip *intc;
+-	unsigned int idx;
++	unsigned int idx = 0;
+ 	int ret;
+ 
++	while (of_get_address(dn, idx++, NULL, NULL))
++		nr_intpol_bases++;
++
+ 	intc = kzalloc(sizeof(*intc), GFP_KERNEL);
+ 	if (!intc)
+ 		return -ENOMEM;
+ 
+ 	for_each_possible_cpu(idx) {
