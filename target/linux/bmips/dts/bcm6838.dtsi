@@ -1,0 +1,223 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/interrupt-controller/bcm6838-interrupt-controller.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	compatible = "brcm,bcm6838";
+
+	aliases {
+		nflash = &nflash;
+//		pinctrl = &pinctrl;
+		serial0 = &uart0;
+		serial1 = &uart1;
+		serial2 = &uart2;
+	};
+
+	chosen {
+		bootargs = "earlycon";
+		stdout-path = "serial0:115200n8";
+	};
+
+	clocks {
+		periph_osc: periph-osc {
+			compatible = "fixed-clock";
+
+			#clock-cells = <0>;
+
+			clock-frequency = <50000000>;
+			clock-output-names = "periph";
+		};
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		mips-hpt-frequency = <160000000>;
+
+		cpu@0 {
+			compatible = "brcm,bmips4350", "mips,mips4Kc";
+			device_type = "cpu";
+			reg = <0>;
+		};
+
+		cpu@1 {
+			compatible = "brcm,bmips4350", "mips,mips4Kc";
+			device_type = "cpu";
+			reg = <1>;
+		};
+	};
+
+	cpu_intc: interrupt-controller {
+		#address-cells = <0>;
+		compatible = "mti,cpu-interrupt-controller";
+
+		interrupt-controller;
+		#interrupt-cells = <1>;
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0 0>;
+	};
+
+	ubus {
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		compatible = "simple-bus";
+		ranges;
+
+		/* not working */
+		pcie: pcie@12800000 {
+			compatible = "brcm,bcm6318-pcie";
+			reg = <0x12800000 0x10000>;
+			#address-cells = <3>;
+			#size-cells = <2>;
+
+			device_type = "pci";
+			bus-range = <0x00 0x01>;
+			ranges = <0x2000000 0 0xe0000000 0xe0000000 0 0xff00000>;
+			linux,pci-probe-only = <1>;
+
+			interrupt-parent = <&periph_intc>;
+			interrupts = <BCM6838_IRQ_PCIE1_RC>;  //irq 76 on 2nd block
+
+			status = "okay";
+		};
+
+		pll_cntl: syscon@14e002c0 {
+			compatible = "syscon", "simple-mfd";
+			reg = <0x14e00010 0x4>;
+			native-endian;
+
+			syscon-reboot {
+				compatible = "syscon-reboot";
+				offset = <0x0>;
+				mask = <0x1>;
+			};
+		};
+
+		periph_intc: interrupt-controller@14e00040 {
+			#address-cells = <1>;
+			compatible = "brcm,bcm6345-l1-intc";
+			reg =   <0x14e00040 0x08>, <0x14E00048 0x08>;
+
+			interrupt-controller;
+			#interrupt-cells = <1>;
+
+			interrupt-parent = <&cpu_intc>;
+			interrupts = <3>, <4>;
+		};
+
+		wdt: watchdog@14e002d0 {
+			compatible = "brcm,bcm7038-wdt";
+			reg = <0x14e002d0 0x10>;
+
+			clocks = <&periph_osc>;
+
+			timeout-sec = <30>;
+		};
+
+		uart0: serial@14e00500 {
+			compatible = "brcm,bcm6345-uart";
+			reg = <0x14e00500 0x18>;
+
+			interrupt-parent = <&periph_intc>;
+			interrupts = <BCM6838_IRQ_UART0>;
+
+			clocks = <&periph_osc>;
+			clock-names = "periph";
+
+			status = "disabled";
+		};
+
+		uart1: serial@14e00520 {
+			compatible = "brcm,bcm6345-uart";
+			reg = <0x14e00520 0x18>;
+
+			interrupt-parent = <&periph_intc>;
+			interrupts = <BCM6838_IRQ_UART1>;
+
+			clocks = <&periph_osc>;
+			clock-names = "periph";
+
+			status = "disabled";
+		};
+
+		uart2: serial@14e00540 {
+			compatible = "brcm,bcm6345-uart";
+			reg = <0x14e00540 0x18>;
+
+			interrupt-parent = <&periph_intc>;
+			interrupts = <BCM6838_IRQ_UART2>;
+
+			clocks = <&periph_osc>;
+			clock-names = "periph";
+
+			status = "disabled";
+		};
+
+		i2c0: i2c@14e00e00 {
+		      compatible = "brcm,brcmper-i2c";
+		      reg = <0x14e00e00 0x58>;
+
+		      interrupt-parent = <&periph_intc>;
+		      interrupts = <BCM6838_IRQ_I2C>;
+
+		      clock-frequency = <97500>;
+
+		      status = "disabled";
+		};
+
+		leds: led-controller@14e00f00 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "brcm,bcm6328-leds";
+			reg = <0x14e00f00 0x24>;
+
+			status = "disabled";
+		};
+
+		/* untested */
+		hsspi: spi@14e01000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "brcm,bcm6328-hsspi";
+			reg = <0x14e01000 0x600>;
+
+			interrupt-parent = <&periph_intc>;
+			interrupts = <BCM6838_IRQ_HSSPI>;
+
+			status = "disabled";
+		};
+
+		nflash: nand@14e02200 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "brcm,nand-bcm6368",
+				     "brcm,brcmnand-v5.0",
+				     "brcm,brcmnand";
+			reg = <0x14e02200 0x180>,
+			      <0x14e02600 0x200>,
+			      <0x14e000f0 0x10>;
+			reg-names = "nand",
+				    "nand-cache",
+				    "nand-int-base";
+
+			interrupt-parent = <&periph_intc>;
+			interrupts = <BCM6838_IRQ_NAND>;
+
+			//pinctrl-names = "default";
+			//pinctrl-0 = <&pinctrl_nand>;
+
+			status = "disabled";
+		};
+	};
+};

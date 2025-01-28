@@ -1,0 +1,97 @@
+--- a/arch/mips/bmips/setup.c
++++ b/arch/mips/bmips/setup.c
+@@ -68,10 +68,15 @@
+ #define BCM6368_PLLC_NDIV_MASK	(0x1ff << BCM6368_PLLC_NDIV_SHIFT)
+ #define REG_BCM6368_DDR_PLLD	((void __iomem *)CKSEG1ADDR(0x100012a4))
+ #define BCM6368_PLLD_MDIV_SHIFT	0
+ #define BCM6368_PLLD_MDIV_MASK	(0xff << BCM6368_PLLD_MDIV_SHIFT)
+ 
++#define REG_BCM6838_OTP_BITS0	((void __iomem *)CKSEG1ADDR(0x14e00440))
++#define VIPER_6838_FREQ_SHIFT	18
++#define VIPER_6838_FREQ_MASK	(0x7 << VIPER_6838_FREQ_SHIFT)
++#define BCM6838_MEMC_ADDR	((void __iomem *)CKSEG1ADDR(0x12000000))
++
+ #define REG_BCM63268_MISC_SB	((void __iomem *)CKSEG1ADDR(0x10001814))
+ #define BCM63268_FCVO_SHIFT	21
+ #define BCM63268_FCVO_MASK	(0xf << BCM63268_FCVO_SHIFT)
+ #define BCM63268_MEMC_ADDR	((void __iomem *)CKSEG1ADDR(0x10003000))
+ 
+@@ -197,10 +202,11 @@ static const struct bmips_quirk bmips_qu
+ 	{ "brcm,bcm33843-viper",	&bcm3384_viper_quirks		},
+ 	{ "brcm,bcm6328",		&bcm6328_quirks			},
+ 	{ "brcm,bcm6358",		&bcm6358_quirks			},
+ 	{ "brcm,bcm6362",		&bcm6368_quirks			},
+ 	{ "brcm,bcm6368",		&bcm6368_quirks			},
++	{ "brcm,bcm6838",		&bcm6368_quirks			},
+ 	{ "brcm,bcm63168",		&bcm6368_quirks			},
+ 	{ "brcm,bcm63268",		&bcm6368_quirks			},
+ 	{ },
+ };
+ 
+@@ -329,10 +335,26 @@ static u32 bcm6368_cpufreq(void)
+ 	m1 = (val & BCM6368_PLLD_MDIV_MASK) >> BCM6368_PLLD_MDIV_SHIFT;
+ 
+ 	return (((64 * 1000000) / p1) * p2 * ndiv) / m1;
+ }
+ 
++static u32 bcm6838_cpufreq(void)
++{
++	u32 val = __raw_readl(REG_BCM6838_OTP_BITS0);
++
++	switch ((val & VIPER_6838_FREQ_MASK) >> VIPER_6838_FREQ_SHIFT) {
++	case 0x0:
++		return 600000000;
++	case 0x1:
++		return 400000000;
++	case 0x2:
++		return 240000000;
++	default:
++		return 0;
++	}
++}
++
+ static u32 bcm63268_cpufreq(void)
+ {
+ 	u32 val = __raw_readl(REG_BCM63268_MISC_SB);
+ 
+ 	switch ((val & BCM63268_FCVO_MASK) >> BCM63268_FCVO_SHIFT) {
+@@ -354,10 +376,11 @@ static const struct bmips_cpufreq bmips_
+ 	{ "brcm,bcm6318", &bcm6318_cpufreq },
+ 	{ "brcm,bcm6328", &bcm6328_cpufreq },
+ 	{ "brcm,bcm6358", &bcm6358_cpufreq },
+ 	{ "brcm,bcm6362", &bcm6362_cpufreq },
+ 	{ "brcm,bcm6368", &bcm6368_cpufreq },
++	{ "brcm,bcm6838", &bcm6838_cpufreq },
+ 	{ "brcm,bcm63268", &bcm63268_cpufreq },
+ 	{ /* sentinel */ }
+ };
+ 
+ void __init plat_time_init(void)
+@@ -450,10 +473,15 @@ static phys_addr_t bcm6362_memsize(void)
+ static phys_addr_t bcm6368_memsize(void)
+ {
+ 	return _bcm6358_memsize(BCM6368_MEMC_ADDR);
+ }
+ 
++static phys_addr_t bcm6838_memsize(void)
++{
++	return _bcm6328_memsize(BCM6838_MEMC_ADDR);
++}
++
+ static phys_addr_t bcm63268_memsize(void)
+ {
+ 	return _bcm6328_memsize(BCM63268_MEMC_ADDR);
+ }
+ 
+@@ -461,10 +489,11 @@ static const struct bmips_memsize bmips_
+ 	{ "brcm,bcm6318", &bcm6318_memsize },
+ 	{ "brcm,bcm6328", &bcm6328_memsize },
+ 	{ "brcm,bcm6358", &bcm6358_memsize },
+ 	{ "brcm,bcm6362", &bcm6362_memsize },
+ 	{ "brcm,bcm6368", &bcm6368_memsize },
++	{ "brcm,bcm6838", &bcm6838_memsize },
+ 	{ "brcm,bcm63268", &bcm63268_memsize },
+ 	{ /* sentinel */ }
+ };
+ 
+ void __init plat_mem_setup(void)

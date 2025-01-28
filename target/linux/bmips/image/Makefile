@@ -294,6 +294,29 @@ define Device/bcm63xx-cfe
     --image-offset $$(if $$(IMAGE_OFFSET),$$(IMAGE_OFFSET),$$(BLOCKSIZE))
 endef
 
+define Build/cfe-bin-nand
+	$(STAGING_DIR_HOST)/bin/imagetag -i $(IMAGE_KERNEL) -f $@ \
+		--output $@.ubi --boardid $(CFE_BOARD_ID) --chipid $(CHIP_ID) \
+		--entry $(LOADER_ENTRY) --load-addr $(LOADER_ENTRY) \
+		$(CFE_EXTRAS) $(1)
+	mv $@.ubi $@
+endef
+
+define Device/bcm63xx-cfe-nand
+  FILESYSTEMS := squashfs ubifs
+  KERNEL := kernel-bin | append-dtb | relocate-kernel | lzma
+  KERNEL_INITRAMFS := kernel-bin | append-dtb | lzma | loader-lzma elf
+  KERNEL_INITRAMFS_SUFFIX := .elf
+  IMAGES := cfe.bin
+  IMAGE/cfe.bin := append-ubi | cfe-bin-nand
+  KERNEL_SIZE := 5120k
+  UBINIZE_OPTS := -E 5
+  DEVICE_PACKAGES += nand-utils
+  CFE_EXTRAS = --signature="MSTC_a001"
+endef
+
+
+
 # Legacy CFEs with specific LZMA parameters and no length
 define Device/bcm63xx-cfe-legacy
   $(Device/bcm63xx-cfe)
